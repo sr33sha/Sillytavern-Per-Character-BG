@@ -1,0 +1,28 @@
+.tt-char-bg-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 15px;
+}
+
+.tt-char-bg-label {
+    font-weight: bold;
+}
+
+.tt-char-bg-preview {
+    max-width: 300px;
+    max-height: 200px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+/* display:none file inputs can silently fail to open the native dialog on click() in some
+   WebViews (including Tauri's). Kept technically "in layout" instead, just off-canvas. */
+.tt-char-bg-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+}
