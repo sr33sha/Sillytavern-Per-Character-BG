@@ -22,19 +22,48 @@ function getCurrentChar() {
     return ctx.characters?.[charId] ?? null;
 }
 
+const OVERLAY_ID = "tt_char_bg_overlay";
+
 /**
- * Applies the current character's uploaded background (if any) directly onto #bg1. If they have
- * none assigned, explicitly clears our own override (rather than leaving a stale previous image
- * in place) so Tauri Tavern's own Global/Chat background shows through again.
+ * Returns our own overlay layer, creating it right after #bg1 if needed. We never write to #bg1
+ * itself: ST stores the global/chat background as an inline style there, so clearing or setting
+ * it from an extension wipes (or overwrites) the global background.
+ */
+function getOverlay() {
+    const bg1 = document.getElementById("bg1");
+    if (!bg1) {
+        return null;
+    }
+    let overlay = document.getElementById(OVERLAY_ID);
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = OVERLAY_ID;
+        bg1.insertAdjacentElement("afterend", overlay);
+    }
+    return overlay;
+}
+
+/**
+ * Shows the current character's background on the overlay, or hides the overlay if they have
+ * none. #bg1 (global/chat background) is left completely untouched.
  */
 function applyCharacterBackground() {
     const bg1 = document.getElementById("bg1");
-    if (!bg1) {
+    const overlay = getOverlay();
+    if (!bg1 || !overlay) {
         return;
     }
     const char = getCurrentChar();
     const dataUrl = char ? extSettings.characterBackgrounds[char.avatar] : null;
-    bg1.style.backgroundImage = dataUrl ? `url("${dataUrl}")` : "";
+    if (dataUrl) {
+        // Mirror ST's fitting class (cover/contain/stretch/center) so it matches the global bg.
+        overlay.className = bg1.className;
+        overlay.style.backgroundImage = `url("${dataUrl}")`;
+        overlay.style.display = "block";
+    } else {
+        overlay.style.backgroundImage = "";
+        overlay.style.display = "none";
+    }
 }
 
 function renderCharacterTab(panel) {
