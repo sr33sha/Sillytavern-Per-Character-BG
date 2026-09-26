@@ -6,5 +6,3 @@ Haven't seen any extension where you can select a background and lock it to a si
 Nested in the native background settings in Sillytavern. Very straight forward to use. You can add, change or replace the image you select, which will make it fall back to the global background.
 
 That's literally it.
-
-Works in both Sillytavern and Tauritavern.
