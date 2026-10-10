@@ -37,10 +37,23 @@
     z-index: -1;
     pointer-events: none;
     background-repeat: no-repeat;
-    background-attachment: fixed;
+    will-change: filter, transform;
+    transition: filter 0.2s ease;
     background-size: cover;
     background-position: center;
 }
 #tt_char_bg_overlay.contain { background-size: contain; background-position: center; }
 #tt_char_bg_overlay.stretch { background-size: 100% 100%; }
 #tt_char_bg_overlay.center { background-size: auto; background-position: center; }
+
+.tt-char-bg-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.tt-char-bg-slider {
+    width: 100%;
+}
