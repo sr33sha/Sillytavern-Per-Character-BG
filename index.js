@@ -12,6 +12,15 @@ const extSettings = extension_settings[extName];
 if (!extSettings.characterBackgrounds) {
     extSettings.characterBackgrounds = {};
 }
+if (!extSettings.characterBackgroundFx) {
+    extSettings.characterBackgroundFx = {};
+}
+
+const DEFAULT_FX = { blur: 0, darkness: 0 }; // blur in px (0-20), darkness in % (0-100)
+
+function getFx(avatar) {
+    return { ...DEFAULT_FX, ...(extSettings.characterBackgroundFx[avatar] ?? {}) };
+}
 
 function getCurrentChar() {
     const ctx = getContext();
@@ -59,11 +68,43 @@ function applyCharacterBackground() {
         // Mirror ST's fitting class (cover/contain/stretch/center) so it matches the global bg.
         overlay.className = bg1.className;
         overlay.style.backgroundImage = `url("${dataUrl}")`;
+        const fx = getFx(char.avatar);
+        overlay.style.filter = `blur(${fx.blur}px) brightness(${1 - fx.darkness / 100})`;
+        // Scale up a bit so the blurred edges don't show a see-through fringe.
+        overlay.style.transform = fx.blur > 0 ? `scale(${1 + fx.blur * 0.006})` : "";
         overlay.style.display = "block";
     } else {
         overlay.style.backgroundImage = "";
+        overlay.style.filter = "";
+        overlay.style.transform = "";
         overlay.style.display = "none";
     }
+}
+
+function makeSlider(labelText, min, max, unit, value, onInput) {
+    const row = document.createElement("label");
+    row.className = "tt-char-bg-slider-row";
+
+    const text = document.createElement("span");
+    text.className = "tt-char-bg-slider-label";
+    const updateText = (v) => { text.textContent = `${labelText}: ${v}${unit}`; };
+    updateText(value);
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = min;
+    input.max = max;
+    input.step = 1;
+    input.value = value;
+    input.className = "tt-char-bg-slider";
+    input.oninput = () => {
+        const v = Number(input.value);
+        updateText(v);
+        onInput(v);
+    };
+
+    row.append(text, input);
+    return row;
 }
 
 function renderCharacterTab(panel) {
@@ -89,6 +130,15 @@ function renderCharacterTab(panel) {
         preview.className = "tt-char-bg-preview";
         preview.src = dataUrl;
         wrapper.appendChild(preview);
+
+        const fx = getFx(char.avatar);
+        const setFx = (key, v) => {
+            extSettings.characterBackgroundFx[char.avatar] = { ...getFx(char.avatar), [key]: v };
+            saveSettingsDebounced();
+            applyCharacterBackground(); // live update, no re-render needed
+        };
+        wrapper.appendChild(makeSlider("Blur", 0, 20, "px", fx.blur, (v) => setFx("blur", v)));
+        wrapper.appendChild(makeSlider("Darkness", 0, 100, "%", fx.darkness, (v) => setFx("darkness", v)));
     }
 
     const fileInput = document.createElement("input");
@@ -123,6 +173,7 @@ function renderCharacterTab(panel) {
         removeBtn.textContent = "Remove";
         removeBtn.onclick = () => {
             delete extSettings.characterBackgrounds[char.avatar];
+            delete extSettings.characterBackgroundFx[char.avatar];
             saveSettingsDebounced();
             applyCharacterBackground();
             renderCharacterTab(panel);
