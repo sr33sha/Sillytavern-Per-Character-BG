@@ -1,5 +1,6 @@
-import { eventSource, event_types, saveSettingsDebounced } from "../../../../script.js";
+import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders } from "../../../../script.js";
 import { extension_settings, getContext } from "../../../extensions.js";
+import { getSanitizedFilename } from "../../../utils.js";
 
 const extName = "TT-Character-Backgrounds";
 const TAB_ID = "bg_character_tab";
@@ -20,6 +21,39 @@ const DEFAULT_FX = { blur: 0, darkness: 0 }; // blur in px (0-20), darkness in %
 
 function getFx(avatar) {
     return { ...DEFAULT_FX, ...(extSettings.characterBackgroundFx[avatar] ?? {}) };
+}
+
+/**
+ * A saved background is either a data: URL (uploaded from disk) or a relative path into the
+ * character's gallery (user/images/<folder>/<file>). Paths need their segments URL-encoded so
+ * spaces, #, ?, quotes etc. in file names don't break the CSS url() or the <img> src.
+ */
+function toUrl(value) {
+    if (value.startsWith("data:")) {
+        return value;
+    }
+    return value.split("/").map(encodeURIComponent).join("/");
+}
+
+/** Same rule ST's gallery uses: a per-character folder override, otherwise the character's name. */
+function getGalleryFolder(char) {
+    return extension_settings.gallery?.folders?.[char.avatar] ?? char.name;
+}
+
+/** Lists the image paths in the character's gallery folder, newest first. */
+async function fetchGalleryImages(char) {
+    const folder = getGalleryFolder(char);
+    const response = await fetch("/api/images/list", {
+        method: "POST",
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ folder, sortField: "date", sortOrder: "desc", type: 1 }), // 1 = images only
+    });
+    if (!response.ok) {
+        throw new Error(`Gallery request failed (${response.status})`);
+    }
+    const files = await response.json();
+    const safeFolder = await getSanitizedFilename(folder);
+    return { folder, paths: files.map((file) => `user/images/${safeFolder}/${file}`) };
 }
 
 function getCurrentChar() {
@@ -67,7 +101,7 @@ function applyCharacterBackground() {
     if (dataUrl) {
         // Mirror ST's fitting class (cover/contain/stretch/center) so it matches the global bg.
         overlay.className = bg1.className;
-        overlay.style.backgroundImage = `url("${dataUrl}")`;
+        overlay.style.backgroundImage = `url("${toUrl(dataUrl)}")`;
         const fx = getFx(char.avatar);
         overlay.style.filter = `blur(${fx.blur}px) brightness(${1 - fx.darkness / 100})`;
         // Scale up a bit so the blurred edges don't show a see-through fringe.
@@ -107,6 +141,37 @@ function makeSlider(labelText, min, max, unit, value, onInput) {
     return row;
 }
 
+function renderGalleryPicker(box, char, panel) {
+    box.textContent = "Loading gallery...";
+    fetchGalleryImages(char).then(({ folder, paths }) => {
+        if (getCurrentChar()?.avatar !== char.avatar || !box.isConnected) {
+            return; // switched character (or re-rendered) while loading
+        }
+        box.textContent = "";
+        if (!paths.length) {
+            box.textContent = `No images in this character's gallery (folder: ${folder}).`;
+            return;
+        }
+        for (const path of paths) {
+            const thumb = document.createElement("img");
+            thumb.className = "tt-char-bg-gallery-thumb";
+            thumb.loading = "lazy";
+            thumb.src = toUrl(path);
+            thumb.title = path.split("/").pop();
+            thumb.onclick = () => {
+                extSettings.characterBackgrounds[char.avatar] = path;
+                saveSettingsDebounced();
+                applyCharacterBackground();
+                renderCharacterTab(panel);
+            };
+            box.appendChild(thumb);
+        }
+    }).catch((error) => {
+        console.error("[Per-Character BG] Failed to load gallery", error);
+        box.textContent = "Couldn't load the gallery.";
+    });
+}
+
 function renderCharacterTab(panel) {
     const char = getCurrentChar();
     panel.innerHTML = "";
@@ -128,7 +193,13 @@ function renderCharacterTab(panel) {
     if (dataUrl) {
         const preview = document.createElement("img");
         preview.className = "tt-char-bg-preview";
-        preview.src = dataUrl;
+        preview.src = toUrl(dataUrl);
+        preview.onerror = () => {
+            // e.g. the gallery image was deleted/renamed, or the character's gallery folder changed
+            const note = document.createElement("div");
+            note.textContent = "Saved image can't be loaded (moved or deleted?). Pick another or remove it.";
+            preview.replaceWith(note);
+        };
         wrapper.appendChild(preview);
 
         const fx = getFx(char.avatar);
@@ -166,6 +237,23 @@ function renderCharacterTab(panel) {
     uploadBtn.textContent = dataUrl ? "Replace Background" : "Upload Background";
     uploadBtn.onclick = () => fileInput.click();
     wrapper.appendChild(uploadBtn);
+
+    const galleryBtn = document.createElement("button");
+    galleryBtn.className = "menu_button interactable tt-char-bg-gallery-btn";
+    galleryBtn.textContent = "Choose from Gallery";
+    wrapper.appendChild(galleryBtn);
+
+    const galleryBox = document.createElement("div");
+    galleryBox.className = "tt-char-bg-gallery";
+    galleryBox.style.display = "none";
+    wrapper.appendChild(galleryBox);
+    galleryBtn.onclick = () => {
+        const opening = galleryBox.style.display === "none";
+        galleryBox.style.display = opening ? "grid" : "none";
+        if (opening) {
+            renderGalleryPicker(galleryBox, char, panel);
+        }
+    };
 
     if (dataUrl) {
         const removeBtn = document.createElement("button");
