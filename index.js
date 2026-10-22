@@ -24,8 +24,9 @@ function getFx(avatar) {
 }
 
 /**
- * A saved background is either a data: URL (uploaded from disk) or a relative path into the
- * character's gallery (user/images/<folder>/<file>). Paths need their segments URL-encoded so
+ * A saved background is normally a relative path to one of our small copies
+ * (user/images/per-character-bg/<file>); a data: URL or a gallery path can still show up from older versions
+ * until the startup cleanup converts them. Paths need their segments URL-encoded so
  * spaces, #, ?, quotes etc. in file names don't break the CSS url() or the <img> src.
  */
 function toUrl(value) {
@@ -38,6 +39,120 @@ function toUrl(value) {
 /** Same rule ST's gallery uses: a per-character folder override, otherwise the character's name. */
 function getGalleryFolder(char) {
     return extension_settings.gallery?.folders?.[char.avatar] ?? char.name;
+}
+
+const BG_FOLDER = "per-character-bg"; // saved under user/images/per-character-bg/
+const BG_MAX_SIDE = 1920;   // longest edge of the saved copy, in px
+const BG_JPEG_QUALITY = 0.8;
+const BG_PATH_PREFIX = `user/images/${BG_FOLDER}/`;
+
+/** True only for files this extension created itself (the small copies in its own folder). */
+function isOwnCopy(value) {
+    return typeof value === "string" && value.startsWith(BG_PATH_PREFIX) && !value.includes("..");
+}
+
+/**
+ * Deletes one of our own small copies. Guarded so it can never touch anything outside our folder:
+ * ST's delete endpoint will remove any file under user/images, including gallery originals.
+ */
+async function deleteOwnCopy(value) {
+    if (!isOwnCopy(value)) {
+        return;
+    }
+    try {
+        await fetch("/api/images/delete", {
+            method: "POST",
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ path: value }),
+        });
+    } catch (error) {
+        console.warn("[Per-Character BG] Couldn't delete old copy", value, error);
+    }
+}
+
+function notifyError(message) {
+    if (window.toastr) {
+        toastr.error(message, "Per-Character BG");
+    }
+}
+
+/** Loads any image src (data: URL or site path) and returns a downscaled JPEG data: URL. */
+function toSmallJpegDataUrl(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const scale = Math.min(1, BG_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#000"; // JPEG has no alpha; flatten transparent PNGs onto black
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", BG_JPEG_QUALITY));
+        };
+        img.onerror = () => reject(new Error("Couldn't load image to make a small copy"));
+        img.src = src;
+    });
+}
+
+/**
+ * Saves a small JPEG copy of an image into the extension's own folder via ST's upload endpoint and returns
+ * the relative path (user/images/per-character-bg/<file>).
+ * Keeps settings.json tiny: embedding the image in settings made it a multi-MB file that ST has
+ * to download on every startup.
+ */
+async function saveDataUrlToGallery(char, srcDataUrl) {
+    const dataUrl = await toSmallJpegDataUrl(srcDataUrl); // always a small JPEG copy, never the original
+    const match = /^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/.exec(dataUrl);
+    if (!match) {
+        throw new Error("Not a base64 image data URL");
+    }
+    const response = await fetch("/api/images/upload", {
+        method: "POST",
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            image: match[2],
+            format: match[1].replace("jpeg", "jpg"),
+            ch_name: BG_FOLDER, // our own folder, so character galleries are never touched
+            filename: `${char.avatar.replace(/\.png$/i, "").replace(/[^a-zA-Z0-9_-]+/g, "_")}_${Date.now()}`,
+        }),
+    });
+    if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
+    }
+    const { path } = await response.json();
+    return String(path).replace(/^\/+/, "");
+}
+
+/**
+ * Cleanup that runs on startup: every background that isn't already one of our small copies (an
+ * image embedded in settings, or a path pointing at a full-size gallery original) becomes a small
+ * JPEG in our own folder. Originals are only read, never changed. Entries for characters that no
+ * longer exist are converted too, so nothing keeps settings.json large.
+ */
+async function migrateBackgrounds() {
+    for (const [avatar, value] of Object.entries({ ...extSettings.characterBackgrounds })) {
+        if (typeof value !== "string" || !value || isOwnCopy(value)) {
+            continue;
+        }
+        try {
+            const src = value.startsWith("data:") ? value : new URL(toUrl(value), location.href).href;
+            const path = await saveDataUrlToGallery({ avatar }, src);
+            if (extSettings.characterBackgrounds[avatar] !== value) {
+                deleteOwnCopy(path); // the user changed it while we were converting; don't clobber that
+                continue;
+            }
+            extSettings.characterBackgrounds[avatar] = path;
+            saveSettingsDebounced();
+            if (getCurrentChar()?.avatar === avatar) {
+                applyCharacterBackground();
+            }
+        } catch (error) {
+            // e.g. the original file is gone; leave the entry as it is and try again next startup
+            console.error("[Per-Character BG] Couldn't convert background for", avatar, error);
+        }
+    }
 }
 
 /** Lists the image paths in the character's gallery folder, newest first. */
@@ -158,9 +273,20 @@ function renderGalleryPicker(box, char, panel) {
             thumb.loading = "lazy";
             thumb.src = toUrl(path);
             thumb.title = path.split("/").pop();
-            thumb.onclick = () => {
-                extSettings.characterBackgrounds[char.avatar] = path;
+            thumb.onclick = async () => {
+                box.style.pointerEvents = "none"; // ignore extra clicks while the copy is being made
+                const previous = extSettings.characterBackgrounds[char.avatar];
+                let value = path; // fallback: point at the original if the small copy can't be made
+                try {
+                    value = await saveDataUrlToGallery(char, new URL(toUrl(path), location.href).href);
+                } catch (error) {
+                    console.error("[Per-Character BG] Small copy failed, using the original", error);
+                }
+                extSettings.characterBackgrounds[char.avatar] = value;
                 saveSettingsDebounced();
+                if (previous !== value) {
+                    deleteOwnCopy(previous);
+                }
                 applyCharacterBackground();
                 renderCharacterTab(panel);
             };
@@ -222,9 +348,20 @@ function renderCharacterTab(panel) {
             return;
         }
         const reader = new FileReader();
-        reader.onload = () => {
-            extSettings.characterBackgrounds[char.avatar] = reader.result;
+        reader.onload = async () => {
+            // Never embed the image in settings.json, even if saving the copy fails.
+            let value;
+            try {
+                value = await saveDataUrlToGallery(char, reader.result);
+            } catch (error) {
+                console.error("[Per-Character BG] Couldn't save the uploaded background", error);
+                notifyError("Couldn't save that background. Nothing was changed.");
+                return;
+            }
+            const previous = extSettings.characterBackgrounds[char.avatar];
+            extSettings.characterBackgrounds[char.avatar] = value;
             saveSettingsDebounced();
+            deleteOwnCopy(previous);
             applyCharacterBackground();
             renderCharacterTab(panel);
         };
@@ -260,6 +397,7 @@ function renderCharacterTab(panel) {
         removeBtn.className = "menu_button interactable tt-char-bg-remove-btn";
         removeBtn.textContent = "Remove";
         removeBtn.onclick = () => {
+            deleteOwnCopy(extSettings.characterBackgrounds[char.avatar]);
             delete extSettings.characterBackgrounds[char.avatar];
             delete extSettings.characterBackgroundFx[char.avatar];
             saveSettingsDebounced();
@@ -335,6 +473,7 @@ eventSource.on(event_types.CHAT_CHANGED, () => {
 
 eventSource.once(event_types.APP_READY, () => {
     applyCharacterBackground();
+    migrateBackgrounds();
 
     // The Backgrounds drawer's content may not exist in the DOM until it's been opened at least
     // once, and Tauri Tavern's own chat-surface re-renders can tear down subtrees on navigation,
