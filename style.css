@@ -79,3 +79,36 @@
 .tt-char-bg-gallery-thumb:hover {
     outline: 2px solid var(--SmartThemeQuoteColor, #fff);
 }
+
+.tt-char-bg-color-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.tt-char-bg-color-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.tt-char-bg-color-input {
+    width: 60px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+}
+
+.tt-char-bg-color-preview {
+    width: 300px;
+    max-width: 100%;
+    height: 110px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
