@@ -1,8 +1,7 @@
 # Sillytavern-Per-Character-BG
 Haven't seen any extension where you can select a background and lock it to a single character. So here we are.
 
-<img width="1470" height="949" alt="Screenshot 2026-10-19 142237" src="https://github.com/user-attachments/assets/8310d64d-8e02-4b58-88cf-2c8f90c5a637" />
-
+<img width="1099" height="1023" alt="Screenshot 2026-11-09 115154" src="https://github.com/user-attachments/assets/d7edcae5-be03-474e-9135-7e2ce3ba4e22" />
 
 Nested in the native background settings in Sillytavern. Very straight forward to use. You can add, change or replace the image you select, which will make it fall back to the global background.
 
