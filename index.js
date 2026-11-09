@@ -16,11 +16,37 @@ if (!extSettings.characterBackgrounds) {
 if (!extSettings.characterBackgroundFx) {
     extSettings.characterBackgroundFx = {};
 }
+if (!extSettings.characterColors) {
+    extSettings.characterColors = {};
+}
 
 const DEFAULT_FX = { blur: 0, darkness: 0 }; // blur in px (0-20), darkness in % (0-100)
 
 function getFx(avatar) {
     return { ...DEFAULT_FX, ...(extSettings.characterBackgroundFx[avatar] ?? {}) };
+}
+
+// "Apply Color" backgrounds: a soft two-color gradient (default) or a single solid color.
+const DEFAULT_COLOR = { mode: "gradient", c1: "#3b3f63", c2: "#15161f", angle: 160 };
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** The character's saved color background, or null. Values are validated before they reach CSS. */
+function getColor(avatar) {
+    const saved = extSettings.characterColors[avatar];
+    if (!saved || !HEX_COLOR.test(saved.c1)) {
+        return null;
+    }
+    return {
+        mode: saved.mode === "solid" ? "solid" : "gradient",
+        c1: saved.c1,
+        c2: HEX_COLOR.test(saved.c2) ? saved.c2 : saved.c1,
+        angle: Number.isFinite(Number(saved.angle)) ? Number(saved.angle) : DEFAULT_COLOR.angle,
+    };
+}
+
+function colorToCss(color) {
+    const second = color.mode === "solid" ? color.c1 : color.c2;
+    return `linear-gradient(${color.angle}deg, ${color.c1}, ${second})`;
 }
 
 /**
@@ -213,14 +239,17 @@ function applyCharacterBackground() {
     }
     const char = getCurrentChar();
     const dataUrl = char ? extSettings.characterBackgrounds[char.avatar] : null;
-    if (dataUrl) {
+    const color = char ? getColor(char.avatar) : null;
+    if (dataUrl || color) {
         // Mirror ST's fitting class (cover/contain/stretch/center) so it matches the global bg.
         overlay.className = bg1.className;
-        overlay.style.backgroundImage = `url("${toUrl(dataUrl)}")`;
         const fx = getFx(char.avatar);
-        overlay.style.filter = `blur(${fx.blur}px) brightness(${1 - fx.darkness / 100})`;
+        // A color has nothing to blur, so only images get the blur.
+        const blur = dataUrl ? fx.blur : 0;
+        overlay.style.backgroundImage = dataUrl ? `url("${toUrl(dataUrl)}")` : colorToCss(color);
+        overlay.style.filter = `blur(${blur}px) brightness(${1 - fx.darkness / 100})`;
         // Scale up a bit so the blurred edges don't show a see-through fringe.
-        overlay.style.transform = fx.blur > 0 ? `scale(${1 + fx.blur * 0.006})` : "";
+        overlay.style.transform = blur > 0 ? `scale(${1 + blur * 0.006})` : "";
         overlay.style.display = "block";
     } else {
         overlay.style.backgroundImage = "";
@@ -283,6 +312,7 @@ function renderGalleryPicker(box, char, panel) {
                     console.error("[Per-Character BG] Small copy failed, using the original", error);
                 }
                 extSettings.characterBackgrounds[char.avatar] = value;
+                delete extSettings.characterColors[char.avatar]; // an image replaces a color
                 saveSettingsDebounced();
                 if (previous !== value) {
                     deleteOwnCopy(previous);
@@ -296,6 +326,70 @@ function renderGalleryPicker(box, char, panel) {
         console.error("[Per-Character BG] Failed to load gallery", error);
         box.textContent = "Couldn't load the gallery.";
     });
+}
+
+function makeColorRow(labelText, value, onInput) {
+    const row = document.createElement("label");
+    row.className = "tt-char-bg-color-row";
+
+    const text = document.createElement("span");
+    text.textContent = labelText;
+
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = value;
+    input.className = "tt-char-bg-color-input";
+    input.oninput = () => onInput(input.value);
+
+    row.append(text, input);
+    return row;
+}
+
+/** Inline editor: edits a draft with a live swatch; nothing is saved (or replaced) until Apply. */
+function renderColorEditor(box, char, panel) {
+    const draft = { ...(getColor(char.avatar) ?? DEFAULT_COLOR) };
+    box.textContent = "";
+
+    const swatch = document.createElement("div");
+    swatch.className = "tt-char-bg-color-preview";
+
+    const modeRow = document.createElement("label");
+    modeRow.className = "tt-char-bg-color-row";
+    const modeText = document.createElement("span");
+    modeText.textContent = "Style";
+    const mode = document.createElement("select");
+    mode.className = "text_pole";
+    mode.innerHTML = `<option value="gradient">Soft gradient</option><option value="solid">Solid color</option>`;
+    mode.value = draft.mode;
+    modeRow.append(modeText, mode);
+
+    const colorOne = makeColorRow("Color", draft.c1, (v) => { draft.c1 = v; refresh(); });
+    const colorTwo = makeColorRow("Second color", draft.c2, (v) => { draft.c2 = v; refresh(); });
+    const angle = makeSlider("Angle", 0, 360, "\u00b0", draft.angle, (v) => { draft.angle = v; refresh(); });
+
+    const refresh = () => {
+        swatch.style.backgroundImage = colorToCss(draft);
+        const gradient = draft.mode === "gradient";
+        colorTwo.style.display = gradient ? "" : "none";
+        angle.style.display = gradient ? "" : "none";
+    };
+    mode.onchange = () => { draft.mode = mode.value; refresh(); };
+
+    const applyBtn = document.createElement("button");
+    applyBtn.className = "menu_button interactable tt-char-bg-color-apply-btn";
+    applyBtn.textContent = "Apply";
+    applyBtn.onclick = () => {
+        const previousImage = extSettings.characterBackgrounds[char.avatar];
+        extSettings.characterColors[char.avatar] = { ...draft };
+        delete extSettings.characterBackgrounds[char.avatar]; // a color replaces an image
+        saveSettingsDebounced();
+        applyCharacterBackground();
+        deleteOwnCopy(previousImage);
+        renderCharacterTab(panel);
+    };
+
+    box.append(swatch, modeRow, colorOne, colorTwo, angle, applyBtn);
+    refresh();
 }
 
 function renderCharacterTab(panel) {
@@ -316,6 +410,13 @@ function renderCharacterTab(panel) {
     wrapper.appendChild(label);
 
     const dataUrl = extSettings.characterBackgrounds[char.avatar];
+    const color = getColor(char.avatar);
+    if (color && !dataUrl) {
+        const swatch = document.createElement("div");
+        swatch.className = "tt-char-bg-color-preview";
+        swatch.style.backgroundImage = colorToCss(color);
+        wrapper.appendChild(swatch);
+    }
     if (dataUrl) {
         const preview = document.createElement("img");
         preview.className = "tt-char-bg-preview";
@@ -336,6 +437,13 @@ function renderCharacterTab(panel) {
         };
         wrapper.appendChild(makeSlider("Blur", 0, 20, "px", fx.blur, (v) => setFx("blur", v)));
         wrapper.appendChild(makeSlider("Darkness", 0, 100, "%", fx.darkness, (v) => setFx("darkness", v)));
+    } else if (color) {
+        const fx = getFx(char.avatar);
+        wrapper.appendChild(makeSlider("Darkness", 0, 100, "%", fx.darkness, (v) => {
+            extSettings.characterBackgroundFx[char.avatar] = { ...getFx(char.avatar), darkness: v };
+            saveSettingsDebounced();
+            applyCharacterBackground();
+        }));
     }
 
     const fileInput = document.createElement("input");
@@ -360,6 +468,7 @@ function renderCharacterTab(panel) {
             }
             const previous = extSettings.characterBackgrounds[char.avatar];
             extSettings.characterBackgrounds[char.avatar] = value;
+            delete extSettings.characterColors[char.avatar]; // an image replaces a color
             saveSettingsDebounced();
             deleteOwnCopy(previous);
             applyCharacterBackground();
@@ -392,13 +501,31 @@ function renderCharacterTab(panel) {
         }
     };
 
-    if (dataUrl) {
+    const colorBtn = document.createElement("button");
+    colorBtn.className = "menu_button interactable tt-char-bg-color-btn";
+    colorBtn.textContent = color ? "Edit Color" : "Apply Color";
+    wrapper.appendChild(colorBtn);
+
+    const colorBox = document.createElement("div");
+    colorBox.className = "tt-char-bg-color-editor";
+    colorBox.style.display = "none";
+    wrapper.appendChild(colorBox);
+    colorBtn.onclick = () => {
+        const opening = colorBox.style.display === "none";
+        colorBox.style.display = opening ? "flex" : "none";
+        if (opening) {
+            renderColorEditor(colorBox, char, panel);
+        }
+    };
+
+    if (dataUrl || color) {
         const removeBtn = document.createElement("button");
         removeBtn.className = "menu_button interactable tt-char-bg-remove-btn";
         removeBtn.textContent = "Remove";
         removeBtn.onclick = () => {
             deleteOwnCopy(extSettings.characterBackgrounds[char.avatar]);
             delete extSettings.characterBackgrounds[char.avatar];
+            delete extSettings.characterColors[char.avatar];
             delete extSettings.characterBackgroundFx[char.avatar];
             saveSettingsDebounced();
             applyCharacterBackground();
