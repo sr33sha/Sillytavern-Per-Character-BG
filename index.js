@@ -589,25 +589,36 @@ function scheduleEnsureCharacterTabExists() {
     });
 }
 
-eventSource.on(event_types.CHAT_CHANGED, () => {
-    // Hide immediately: ST fires CHAT_CHANGED before clearing characterId in the old
-    // getContext() API, so applyCharacterBackground() would see the previous character
-    // and briefly show their overlay. Hiding first prevents any visible flash.
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (overlay) overlay.style.display = 'none';
+/**
+ * Runs on every chat change (open, switch, close). applyCharacterBackground() runs right away: by
+ * the time CHAT_CHANGED fires, ST has already set (or cleared) the current character - on every
+ * path, including closeCurrentChat() - so there is nothing to wait for.
+ *
+ * ST awaits listeners one after another, and the welcome screen's listener goes first and does
+ * network requests. That is why this handler is moved to the front of the queue at APP_READY: if it
+ * waited its turn, the old character's overlay would stay on screen over the welcome page until
+ * the welcome screen finished loading.
+ */
+function onChatChanged() {
+    applyCharacterBackground();
 
-    // Re-apply after one animation frame so the context has settled.
+    // The Character tab is heavier DOM work and nothing is waiting on it, so it can take a frame.
     requestAnimationFrame(() => {
-        applyCharacterBackground();
         ensureCharacterTabExists();
         const panel = document.getElementById(TAB_ID);
         if (panel) {
-            renderCharacterTab(panel);
+            renderCharacterTab(panel); // refresh content for whichever character we just switched to
         }
     });
-});
+}
+
+eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
 
 eventSource.once(event_types.APP_READY, () => {
+    // Now that ST's own listeners (the welcome screen) are registered, move ours ahead of them.
+    // makeFirst() removes the earlier registration, so this never runs twice.
+    eventSource.makeFirst?.(event_types.CHAT_CHANGED, onChatChanged);
+
     applyCharacterBackground();
     migrateBackgrounds();
 
