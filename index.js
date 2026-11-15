@@ -590,12 +590,21 @@ function scheduleEnsureCharacterTabExists() {
 }
 
 eventSource.on(event_types.CHAT_CHANGED, () => {
-    applyCharacterBackground();
-    ensureCharacterTabExists();
-    const panel = document.getElementById(TAB_ID);
-    if (panel) {
-        renderCharacterTab(panel); // refresh content for whichever character we just switched to
-    }
+    // Hide immediately: ST fires CHAT_CHANGED before clearing characterId in the old
+    // getContext() API, so applyCharacterBackground() would see the previous character
+    // and briefly show their overlay. Hiding first prevents any visible flash.
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) overlay.style.display = 'none';
+
+    // Re-apply after one animation frame so the context has settled.
+    requestAnimationFrame(() => {
+        applyCharacterBackground();
+        ensureCharacterTabExists();
+        const panel = document.getElementById(TAB_ID);
+        if (panel) {
+            renderCharacterTab(panel);
+        }
+    });
 });
 
 eventSource.once(event_types.APP_READY, () => {
