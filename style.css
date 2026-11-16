@@ -1,0 +1,201 @@
+/* Per-Character BG — 5-slot scenes */
+
+.tt-char-bg-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 15px;
+}
+
+.tt-char-bg-label {
+    font-weight: bold;
+}
+
+/* Hidden but accessible file input */
+.tt-char-bg-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+}
+
+/* Per-character background overlay */
+#tt_char_bg_overlay {
+    display: none;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    will-change: filter, transform;
+    transition: filter 0.2s ease;
+    background-size: cover;
+    background-position: center;
+}
+#tt_char_bg_overlay.contain { background-size: contain; background-position: center; }
+#tt_char_bg_overlay.stretch { background-size: 100% 100%; }
+#tt_char_bg_overlay.center  { background-size: auto; background-position: center; }
+
+/* ── Slot card ── */
+.tt-char-bg-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 340px;
+}
+
+.tt-char-bg-slot-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+.tt-char-bg-slot-num {
+    flex-shrink: 0;
+    font-weight: bold;
+    min-width: 56px;
+    font-size: 0.85em;
+    color: var(--SmartThemeQuoteColor, #aaa);
+}
+
+.tt-char-bg-slot-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85em;
+    padding: 3px 6px !important;
+    height: 26px !important;
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.2));
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    color: inherit;
+}
+
+.tt-char-bg-fallback-active {
+    color: gold !important;
+    border-color: gold !important;
+}
+
+.tt-char-bg-slot-clear {
+    flex-shrink: 0;
+    padding: 2px 7px !important;
+    font-size: 0.8em !important;
+    opacity: 0.6;
+}
+.tt-char-bg-slot-clear:hover { opacity: 1; }
+
+/* Image preview inside a slot */
+.tt-char-bg-preview {
+    max-width: 300px;
+    max-height: 160px;
+    border-radius: 6px;
+    object-fit: cover;
+}
+
+/* Action buttons row */
+.tt-char-bg-slot-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tt-char-bg-slot-actions .menu_button {
+    font-size: 0.8em !important;
+    padding: 3px 8px !important;
+}
+
+/* Gallery grid (inside a slot, collapsed by default) */
+.tt-char-bg-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 5px;
+    width: 100%;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.tt-char-bg-gallery-thumb {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.tt-char-bg-gallery-thumb:hover {
+    outline: 2px solid var(--SmartThemeQuoteColor, #fff);
+}
+
+/* Color editor */
+.tt-char-bg-color-editor {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 0;
+    width: 100%;
+    max-width: 340px;
+}
+
+.tt-char-bg-color-preview {
+    width: 100%;
+    max-width: 300px;
+    height: 36px;
+    border-radius: 6px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.tt-char-bg-color-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.tt-char-bg-color-row span {
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+.tt-char-bg-color-input {
+    width: 44px;
+    height: 26px;
+    padding: 1px 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+}
+
+.tt-char-bg-color-row select {
+    font-size: 0.85em;
+    padding: 2px 4px !important;
+    height: 26px !important;
+    min-width: 120px;
+}
+
+/* FX sliders */
+.tt-char-bg-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.tt-char-bg-slider {
+    width: 100%;
+}
+
+.tt-char-bg-slider-label {
+    font-size: 0.85em;
+    color: var(--SmartThemeBodyColor, inherit);
+}
