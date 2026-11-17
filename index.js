@@ -1,4 +1,4 @@
-﻿import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders, setExtensionPrompt } from "../../../../script.js";
+import { eventSource, event_types, saveSettingsDebounced, getRequestHeaders, setExtensionPrompt } from "../../../../script.js";
 import { extension_settings, getContext } from "../../../extensions.js";
 import { getSanitizedFilename } from "../../../utils.js";
 
@@ -426,7 +426,7 @@ function renderCharacterTab(panel) {
             clearBtn.className = "menu_button interactable tt-char-bg-slot-clear";
             clearBtn.textContent = "✕";
             clearBtn.title = "Remove this scene";
-            clearBtn.onclick = () => {
+            clearBtn.onclick = async () => {
                 const updated = getScenes(char.avatar);
                 const previous = updated[i]?.path;
                 updated[i] = null;
@@ -437,6 +437,7 @@ function renderCharacterTab(panel) {
                 if (extSettings.characterFallback[char.avatar] === i) {
                     delete extSettings.characterFallback[char.avatar];
                 }
+                if (previous) await deleteOwnCopy(previous);
                 saveSettingsDebounced();
                 applyCharacterBackground();
                 buildAndInjectBGData(char);
@@ -486,7 +487,17 @@ function renderCharacterTab(panel) {
             uploadBox.style.display = "none";
             galleryBox.style.display = opening ? "grid" : "none";
             if (opening) {
-                renderGalleryPicker(galleryBox, char, (path, name) => {
+                renderGalleryPicker(galleryBox, char, async (pickedPath, name) => {
+                    let path;
+                    try {
+                        path = await saveDataUrlToGallery(char, toUrl(pickedPath));
+                    } catch (error) {
+                        console.error("[Per-Character BG] Couldn't save gallery image as JPEG copy", error);
+                        notifyError("Couldn't save that image. Nothing changed.");
+                        return;
+                    }
+                    const previous = getScenes(char.avatar)[i]?.path;
+                    if (previous) await deleteOwnCopy(previous);
                     const updated = getScenes(char.avatar);
                     updated[i] = { path, name };
                     extSettings.characterScenes[char.avatar] = updated;
